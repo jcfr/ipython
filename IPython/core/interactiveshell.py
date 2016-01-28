@@ -527,7 +527,7 @@ class InteractiveShell(SingletonConfigurable):
         # This logic in in debugger.Pdb and should eventually be changed.
         self.init_io()
         self.init_traceback_handlers(custom_exceptions)
-        self.init_prompts()
+        #self.init_prompts()
         self.init_display_formatter()
         self.init_display_pub()
         self.init_data_pub()

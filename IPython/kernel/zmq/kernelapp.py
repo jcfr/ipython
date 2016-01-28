@@ -190,7 +190,8 @@ class IPKernelApp(BaseIPythonApplication, InteractiveShellApp,
     
     def init_connection_file(self):
         if not self.connection_file:
-            self.connection_file = "kernel-%s.json"%os.getpid()
+            #self.connection_file = "kernel-%s.json"%os.getpid()
+           self.connection_file = "kernel-%s.json"%1234
         try:
             self.connection_file = filefind(self.connection_file, ['.', self.profile_dir.security_dir])
         except IOError:
@@ -283,13 +284,52 @@ class IPKernelApp(BaseIPythonApplication, InteractiveShellApp,
     
     def init_io(self):
         """Redirect input streams and set a display hook."""
+
         if self.outstream_class:
             outstream_factory = import_item(str(self.outstream_class))
-            sys.stdout = outstream_factory(self.session, self.iopub_socket, u'stdout')
-            sys.stderr = outstream_factory(self.session, self.iopub_socket, u'stderr')
+
+
+            zmq_stdout = outstream_factory(self.session, self.iopub_socket, u'stdout')
+            zmq_stderr = outstream_factory(self.session, self.iopub_socket, u'stderr')
+
+            import __main__
+            if hasattr(__main__, '_pythonqt'):
+
+
+                def handleStdOut(text):
+                    zmq_stdout.write(text)
+
+                def handleStdErr(text):
+                    zmq_stderr.write(text)
+
+                pythonqt = __main__._pythonqt
+                pythonqt.connect('pythonStdOut(QString)', handleStdOut)
+                pythonqt.connect('pythonStdErr(QString)', handleStdErr)
+                io.rprint("pythonqt: StdOut/StdErr handler enabled")
+            else:
+                io.rprint("pythonqt: StdOut/StdErr handler disabled. Associating sys.std[out|err] with outstream")
+                sys.stdout = zmq_stdout
+                sys.stderr = zmq_stderr
+
         if self.displayhook_class:
             displayhook_factory = import_item(str(self.displayhook_class))
-            sys.displayhook = displayhook_factory(self.session, self.iopub_socket)
+
+            import __main__
+            if hasattr(__main__, '_pythonqt'):
+                dh = displayhook_factory(self.session, self.iopub_socket)
+                io.rprint("display hook instantiated: %s" % dh)
+                old_dh = sys.displayhook
+                io.rprint("current display hook saved to 'old_dh': %s" % old_dh)
+                def foo(value):
+                    io.rprint("'foo' method invoked through sys.displayhook with value '%s'" % value)
+                    dh(value)
+                    old_dh(value)
+                sys.displayhook = foo
+            else:
+                sys.displayhook = displayhook_factory(self.session, self.iopub_socket)
+                io.rprint("regular display hook instantiated: %s" % sys.displayhook)
+
+
 
     def init_signal(self):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -348,18 +388,25 @@ class IPKernelApp(BaseIPythonApplication, InteractiveShellApp,
         self.init_sockets()
         self.init_heartbeat()
         # writing/displaying connection info must be *after* init_sockets/heartbeat
+        io.rprint("log_connection_info")
         self.log_connection_info()
+        io.rprint("write_connection_file")
         self.write_connection_file()
+        io.rprint("init_io")
         self.init_io()
+        io.rprint("init_signal")
         self.init_signal()
+        io.rprint("init_kernel")
         self.init_kernel()
         # shell init steps
         self.init_path()
+        io.rprint("init_shell *disabled*")
         self.init_shell()
-        if self.shell:
-            self.init_gui_pylab()
-            self.init_extensions()
-            self.init_code()
+        io.rprint("init_shell - shell: %s" % self.shell)
+        #if self.shell:
+        #    self.init_gui_pylab()
+        #    self.init_extensions()
+        #    self.init_code()
         # flush stdout/stderr, so that anything written to these streams during
         # initialization do not get associated with the first execution request
         sys.stdout.flush()
@@ -370,6 +417,17 @@ class IPKernelApp(BaseIPythonApplication, InteractiveShellApp,
             self.poller.start()
         self.kernel.start()
         try:
+            io.rprint("pre-start")
+            import __main__
+            if hasattr(__main__, '_pythonqt'):
+
+                def process_gui_events():
+                    import __main__
+                    if hasattr(__main__, '_app'):
+                        __main__._app.processEvents()
+                    ioloop.IOLoop.instance().add_callback(process_gui_events)
+                ioloop.IOLoop.instance().add_callback(process_gui_events)
+                io.rprint("pythonqt: 'process_gui_events' added as IOLoop callback")
             ioloop.IOLoop.instance().start()
         except KeyboardInterrupt:
             pass
